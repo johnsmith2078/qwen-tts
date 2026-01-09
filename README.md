@@ -61,33 +61,31 @@ cd qwen-tts
 
 ### 2. 环境准备
 
-确保已安装 Python 3.8+ 并下载项目文件。
+确保已安装 Python 3.8+ 和 [uv](https://docs.astral.sh/uv/)（推荐）或 pip。
 
-**方式一：使用安装脚本（推荐）**
+**方式一：使用 uv（推荐）**
 ```bash
-# 运行自动安装脚本
-python install.py
+# 安装 uv（如果尚未安装）
+# Windows (PowerShell)
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+
+# macOS/Linux
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# 同步依赖（uv 会自动创建虚拟环境）
+uv sync
 ```
 
-**方式二：手动安装**
+**方式二：使用 pip**
 ```bash
-# 安装项目依赖
+# 创建虚拟环境（可选但推荐）
+python -m venv .venv
+# Windows: .venv\Scripts\activate
+# macOS/Linux: source .venv/bin/activate
+
+# 安装依赖
 pip install -r requirements.txt
-
-# 复制环境变量模板
-cp .env.example .env
 ```
-
-**依赖包说明：**
-- fastapi - Web 框架
-- uvicorn - ASGI 服务器
-- dashscope - 阿里云 DashScope SDK
-- requests - HTTP 请求库
-- python-multipart - 文件上传支持
-- jinja2 - 模板引擎
-- aiofiles - 异步文件操作
-- pydantic - 数据验证
-- python-dotenv - 环境变量管理
 
 ### 3. 配置 API Key
 
@@ -114,11 +112,13 @@ cp .env.example .env
 
 ### 4. 启动服务
 
+**使用 uv（推荐）**
 ```bash
-# 使用启动脚本（推荐）
-python start.py
+uv run main.py
+```
 
-# 或直接启动
+**使用 pip/Python**
+```bash
 python main.py
 
 # 或使用 uvicorn
@@ -131,10 +131,54 @@ uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 - **API 文档**: http://localhost:8000/docs
 - **ReDoc 文档**: http://localhost:8000/redoc
 
-### 6. 运行演示
+### 6. 安装浏览器扩展（可选）
+
+浏览器扩展可让您在任意网页上选中文本后一键朗读。
+
+#### Chrome / Edge / Brave 安装步骤：
+
+1. 打开浏览器扩展管理页面：
+   - **Chrome**: 地址栏输入 `chrome://extensions/`
+   - **Edge**: 地址栏输入 `edge://extensions/`
+   - **Brave**: 地址栏输入 `brave://extensions/`
+
+2. 开启 **"开发者模式"**（页面右上角的开关）
+
+3. 点击 **"加载未打包的扩展程序"** 按钮
+
+4. 选择项目中的 `extension` 文件夹
+
+5. 扩展安装成功后，图标会出现在浏览器工具栏
+
+#### 使用浏览器扩展：
+
+1. **确保后端服务已启动**（`uv run main.py`）
+
+2. 在任意网页上选中要朗读的文本
+
+3. 点击选中文本旁边出现的 🔊 朗读按钮
+
+4. 等待音频生成并自动播放
+
+5. 点击扩展图标可以修改设置：
+   - 服务器地址（默认 `http://localhost:8000`）
+   - 音色选择
+   - 启用/禁用扩展
+
+#### 扩展特性：
+
+- **流式播放**: 边接收边播放，减少等待时间
+- **实时状态**: 显示缓冲、播放进度
+- **拖拽播放器**: 播放器窗口可拖动
+- **自动隐藏**: 播放完成后自动关闭
+
+### 7. 运行演示
 
 ```bash
-# 运行演示脚本，测试所有音色
+# 使用 uv
+uv run demo.py
+
+# 或使用 Python
 python demo.py
 ```
 
@@ -185,6 +229,19 @@ curl -X POST "http://localhost:8000/api/synthesize" \
      }'
 ```
 
+### 语音合成（流式） API
+
+直接返回音频二进制数据（不落盘），可用 `--output` 保存为文件：
+
+```bash
+curl -X POST "http://localhost:8000/api/stream" \
+     -H "Content-Type: application/json" \
+     -d '{
+       "text": "你好，这是一个测试",
+       "voice": "Cherry"
+     }' --output tts.wav
+```
+
 ### 获取音色列表
 
 ```bash
@@ -209,19 +266,28 @@ curl "http://localhost:8000/api/health"
 ## 📁 项目结构
 
 ```
-qwen-tts-test/
+qwen-tts/
 ├── main.py              # FastAPI 主应用
 ├── config.py            # 配置文件
-├── start.py             # 启动脚本
-├── requirements.txt     # 依赖列表
+├── pyproject.toml       # 项目配置和依赖（uv/pip）
+├── uv.lock              # uv 锁定文件
+├── requirements.txt     # pip 依赖列表
 ├── .env.example         # 环境变量模板
-├── README.md           # 项目说明
-├── templates/          # HTML 模板
-│   └── index.html      # 主页模板
-├── static/             # 静态资源
-│   ├── style.css       # 样式文件
-│   └── script.js       # JavaScript 脚本
-└── audio_output/       # 音频输出目录
+├── README.md            # 项目说明
+├── templates/           # HTML 模板
+│   └── index.html       # 主页模板
+├── static/              # 静态资源
+│   ├── style.css        # 样式文件
+│   └── script.js        # JavaScript 脚本
+├── extension/           # 浏览器扩展
+│   ├── manifest.json    # 扩展配置
+│   ├── content.js       # 内容脚本（注入网页）
+│   ├── content.css      # 内容样式
+│   ├── popup.html       # 弹出窗口
+│   ├── popup.js         # 弹出窗口脚本
+│   ├── popup.css        # 弹出窗口样式
+│   └── icons/           # 扩展图标
+└── audio_output/        # 音频输出目录
 ```
 
 ## 🔧 开发说明

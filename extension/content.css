@@ -1,0 +1,139 @@
+/**
+ * Qwen-TTS 浏览器扩展 - Content Script 样式
+ */
+
+/* 悬浮按钮 */
+#qwen-tts-float-btn {
+    position: absolute;
+    z-index: 2147483647;
+    width: 40px;
+    height: 40px;
+    background: linear-gradient(135deg, #6366f1, #5855eb);
+    color: white;
+    border: none;
+    border-radius: 50%;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 4px 12px rgba(99, 102, 241, 0.4);
+    opacity: 0;
+    transform: scale(0.8);
+    pointer-events: none;
+    transition: all 0.2s ease;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+#qwen-tts-float-btn.visible {
+    opacity: 1;
+    transform: scale(1);
+    pointer-events: auto;
+}
+
+#qwen-tts-float-btn:hover {
+    background: linear-gradient(135deg, #5855eb, #4f46e5);
+    transform: scale(1.1);
+    box-shadow: 0 6px 16px rgba(99, 102, 241, 0.5);
+}
+
+#qwen-tts-float-btn:active {
+    transform: scale(0.95);
+}
+
+#qwen-tts-float-btn.loading {
+    pointer-events: none;
+}
+
+#qwen-tts-float-btn.loading svg {
+    animation: qwen-tts-spin 1s linear infinite;
+}
+
+@keyframes qwen-tts-spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
+/* 音频播放器 */
+#qwen-tts-audio-player {
+    position: absolute;
+    z-index: 2147483647;
+    background: #ffffff;
+    border-radius: 12px;
+    padding: 12px 16px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+    opacity: 0;
+    transform: translateY(10px);
+    pointer-events: none;
+    transition: all 0.3s ease;
+    border: 1px solid #e2e8f0;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    min-width: 260px;
+}
+
+#qwen-tts-audio-player.visible {
+    opacity: 1;
+    transform: translateY(0);
+    pointer-events: auto;
+}
+
+.qwen-tts-player-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 10px;
+    cursor: grab;
+    user-select: none;
+}
+
+#qwen-tts-audio-player.dragging .qwen-tts-player-header {
+    cursor: grabbing;
+}
+
+#qwen-tts-audio-player.dragging {
+    opacity: 0.9;
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.2);
+}
+
+.qwen-tts-status {
+    font-size: 13px;
+    color: #64748b;
+    font-weight: 500;
+}
+
+.qwen-tts-close-btn {
+    background: none;
+    border: none;
+    color: #94a3b8;
+    cursor: pointer;
+    padding: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+    transition: all 0.2s ease;
+}
+
+.qwen-tts-close-btn:hover {
+    color: #ef4444;
+    background: rgba(239, 68, 68, 0.1);
+}
+
+#qwen-tts-audio-player audio {
+    width: 100%;
+    height: 36px;
+    outline: none;
+}
+
+/* 确保样式不受页面影响 */
+#qwen-tts-float-btn,
+#qwen-tts-float-btn *,
+#qwen-tts-audio-player,
+#qwen-tts-audio-player * {
+    box-sizing: border-box;
+    line-height: normal;
+    font-size: inherit;
+    font-weight: normal;
+    font-style: normal;
+    text-decoration: none;
+    text-transform: none;
+}

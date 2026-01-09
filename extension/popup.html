@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Qwen-TTS 设置</title>
+    <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+    <div class="popup-container">
+        <div class="header">
+            <div class="logo">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+                    <path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+                    <path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path>
+                </svg>
+            </div>
+            <h1>Qwen-TTS</h1>
+        </div>
+
+        <div class="setting-group">
+            <label class="toggle-label">
+                <span>启用扩展</span>
+                <input type="checkbox" id="enabledToggle" checked>
+                <span class="toggle-slider"></span>
+            </label>
+        </div>
+
+        <div class="setting-group">
+            <label for="serverUrl">服务器地址</label>
+            <input type="text" id="serverUrl" placeholder="http://localhost:8000">
+            <p class="hint">Qwen-TTS 服务的地址</p>
+        </div>
+
+        <div class="setting-group">
+            <label for="voiceSelect">默认音色</label>
+            <select id="voiceSelect">
+                <option value="Cherry">Cherry - 年轻女声</option>
+                <option value="Serena">Serena - 成熟女声</option>
+                <option value="Ethan">Ethan - 年轻男声</option>
+                <option value="Chelsie">Chelsie - 温柔女声</option>
+            </select>
+        </div>
+
+        <div class="actions">
+            <button id="saveBtn" class="btn-primary">保存设置</button>
+            <button id="testBtn" class="btn-secondary">测试连接</button>
+        </div>
+
+        <div id="status" class="status"></div>
+
+        <div class="footer">
+            <p>选中文本后点击悬浮按钮即可朗读</p>
+        </div>
+    </div>
+
+    <script src="popup.js"></script>
+</body>
+</html>

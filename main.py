@@ -9,8 +9,10 @@ import re
 import json
 import zipfile
 import tempfile
+import base64
+import concurrent.futures
 from datetime import datetime
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, AsyncGenerator
 from pathlib import Path
 from enum import Enum
 
@@ -22,6 +24,7 @@ from fastapi import FastAPI, HTTPException, Request, Form, File, UploadFile, Bac
 from fastapi.responses import HTMLResponse, FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 from config import config
@@ -33,6 +36,15 @@ app = FastAPI(
     version="1.0.0",
     docs_url="/docs",
     redoc_url="/redoc"
+)
+
+# 添加 CORS 中间件，允许浏览器扩展跨域访问
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # 允许所有来源（浏览器扩展需要）
+    allow_credentials=True,
+    allow_methods=["*"],  # 允许所有 HTTP 方法
+    allow_headers=["*"],  # 允许所有请求头
 )
 
 # 创建必要的目录
@@ -150,20 +162,81 @@ class QwenTTSService:
         """异步下载音频文件"""
         try:
             file_path = os.path.join(config.AUDIO_OUTPUT_DIR, filename)
-            
+
             response = await asyncio.get_event_loop().run_in_executor(
                 None,
                 lambda: requests.get(audio_url, timeout=config.DOWNLOAD_TIMEOUT)
             )
             response.raise_for_status()
-            
+
             async with aiofiles.open(file_path, 'wb') as f:
                 await f.write(response.content)
-            
+
             return file_path
-            
+
         except Exception as e:
             raise RuntimeError(f"音频下载失败: {e}")
+
+    def synthesize_stream(
+        self,
+        text: str,
+        voice: str = "Cherry",
+        model: str = config.DEFAULT_MODEL,
+    ):
+        """同步流式语音合成生成器（返回音频数据块）"""
+        # 验证音色
+        if voice not in config.VOICES:
+            raise ValueError(f"不支持的音色: {voice}")
+
+        print(f"[流式TTS] 开始合成: text={text[:50]}..., voice={voice}, model={model}")
+
+        # 调用 Qwen-TTS 流式 API（使用官方文档格式：直接参数）
+        try:
+            response = dashscope.MultiModalConversation.call(
+                api_key=self.api_key,
+                model=model,
+                text=text,
+                voice=voice,
+                stream=True,
+            )
+        except Exception as e:
+            print(f"[流式TTS] API调用失败: {e}")
+            raise
+
+        chunk_count = 0
+        total_bytes = 0
+
+        for chunk in response:
+            # 调试：打印前几个chunk的结构
+            # if chunk_count < 3:
+            #     print(f"[流式TTS] chunk {chunk_count}: {chunk}")
+
+            if chunk.output is not None:
+                audio_data = None
+
+                # 获取音频数据: chunk.output.audio.data
+                if hasattr(chunk.output, 'audio') and chunk.output.audio is not None:
+                    audio = chunk.output.audio
+                    if hasattr(audio, 'data') and audio.data is not None:
+                        audio_data = audio.data
+                    elif isinstance(audio, dict) and 'data' in audio:
+                        audio_data = audio['data']
+
+                if audio_data is not None:
+                    # 解码 Base64 音频数据
+                    audio_bytes = base64.b64decode(audio_data)
+                    chunk_count += 1
+                    total_bytes += len(audio_bytes)
+                    if chunk_count % 10 == 0:
+                        print(f"[流式TTS] 已接收 {chunk_count} 个chunk, 共 {total_bytes} 字节")
+                    yield audio_bytes
+
+                # 检查是否结束
+                if hasattr(chunk.output, 'finish_reason') and chunk.output.finish_reason == "stop":
+                    print(f"[流式TTS] 合成完成: {chunk_count} 个chunk, 共 {total_bytes} 字节")
+                    break
+
+        print(f"[流式TTS] 流结束: 共 {chunk_count} 个chunk, {total_bytes} 字节")
 
 # 批量处理管理器
 class BatchTaskManager:
@@ -349,6 +422,114 @@ async def synthesize_text(request: TTSRequest):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"语音合成失败: {str(e)}")
+
+@app.post(
+    "/api/stream",
+    response_class=StreamingResponse,
+    responses={
+        200: {
+            "content": {
+                "audio/wav": {"schema": {"type": "string", "format": "binary"}},
+                "audio/mpeg": {"schema": {"type": "string", "format": "binary"}},
+                "application/octet-stream": {"schema": {"type": "string", "format": "binary"}},
+            },
+            "description": "流式返回生成的语音音频数据",
+        }
+    },
+)
+async def stream_synthesize_text(request: TTSRequest):
+    """文本转语音（流式返回音频）- 真正的流式输出，边生成边发送"""
+    # 验证音色
+    if request.voice not in config.VOICES:
+        raise HTTPException(status_code=400, detail=f"不支持的音色: {request.voice}")
+
+    async def audio_stream_generator():
+        """异步音频流生成器 - 实时流式传输"""
+        loop = asyncio.get_event_loop()
+        queue = asyncio.Queue()
+        error_holder = {"error": None}
+        finished = {"done": False}
+
+        def run_stream():
+            """在线程中运行流式合成"""
+            try:
+                for chunk in tts_service.synthesize_stream(
+                    text=request.text,
+                    voice=request.voice,
+                    model=request.model
+                ):
+                    # 立即将chunk放入队列
+                    asyncio.run_coroutine_threadsafe(queue.put(chunk), loop)
+            except Exception as e:
+                error_holder["error"] = str(e)
+                print(f"流式合成错误: {e}")
+            finally:
+                finished["done"] = True
+                # 放入结束标记
+                asyncio.run_coroutine_threadsafe(queue.put(None), loop)
+
+        # 在线程池中启动流式合成
+        executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+        future = executor.submit(run_stream)
+
+        chunk_count = 0
+        try:
+            while True:
+                try:
+                    # 等待数据，设置较长超时
+                    chunk = await asyncio.wait_for(queue.get(), timeout=30.0)
+
+                    if chunk is None:
+                        # 结束标记
+                        break
+
+                    chunk_count += 1
+                    yield chunk
+
+                except asyncio.TimeoutError:
+                    if finished["done"]:
+                        break
+                    # 继续等待
+                    continue
+
+        finally:
+            executor.shutdown(wait=False)
+
+        # 如果没有收到任何数据，回退到非流式API
+        if chunk_count == 0:
+            print("[流式TTS] 没有收到流式数据，回退到非流式API")
+            result = await tts_service.synthesize_speech(
+                text=request.text,
+                voice=request.voice,
+                model=request.model
+            )
+            if result["success"]:
+                audio_url = result["audio_url"]
+                response = await loop.run_in_executor(
+                    None,
+                    lambda: requests.get(audio_url, timeout=config.DOWNLOAD_TIMEOUT)
+                )
+                response.raise_for_status()
+                yield response.content
+            else:
+                raise RuntimeError(result.get("error", "TTS合成失败"))
+
+    # 生成文件名用于 Content-Disposition
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = f"tts_{request.voice}_{timestamp}_{uuid.uuid4().hex[:8]}.pcm"
+
+    headers = {
+        "Content-Disposition": f'inline; filename="{filename}"',
+        "Cache-Control": "no-cache",
+        "X-Content-Type-Options": "nosniff",
+        "X-Audio-Format": "pcm-16bit-24000hz-mono",  # 告诉客户端音频格式
+    }
+
+    return StreamingResponse(
+        audio_stream_generator(),
+        media_type="application/octet-stream",  # 原始PCM数据
+        headers=headers
+    )
 
 @app.get("/api/download/{filename}")
 async def download_audio_file(filename: str):

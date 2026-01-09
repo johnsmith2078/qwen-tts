@@ -164,3 +164,5 @@ settings.local.py
 # 缓存文件
 .cache/
 *.cache
+
+.claude/settings.local.json

@@ -791,8 +791,278 @@ class QwenTTSApp {
     }
 }
 
+/**
+ * 文本选择悬浮按钮功能
+ * 监听文本选择，显示悬浮按钮，点击后发送到 /api/stream 并实时播放
+ */
+class SelectionSpeaker {
+    constructor() {
+        this.floatBtn = null;
+        this.audioPlayer = null;
+        this.currentAudio = null;
+        this.selectedText = '';
+        this.isLoading = false;
+        this.hideTimeout = null;
+
+        this.init();
+    }
+
+    init() {
+        this.createFloatButton();
+        this.createAudioPlayer();
+        this.bindEvents();
+    }
+
+    createFloatButton() {
+        this.floatBtn = document.createElement('button');
+        this.floatBtn.className = 'selection-float-btn';
+        this.floatBtn.innerHTML = '<i class="fas fa-volume-up"></i>';
+        this.floatBtn.title = '朗读选中文本';
+        document.body.appendChild(this.floatBtn);
+    }
+
+    createAudioPlayer() {
+        this.audioPlayer = document.createElement('div');
+        this.audioPlayer.className = 'selection-audio-player';
+        this.audioPlayer.innerHTML = `
+            <span class="player-status">播放中...</span>
+            <audio controls></audio>
+            <button class="close-btn" title="关闭">
+                <i class="fas fa-times"></i>
+            </button>
+        `;
+        document.body.appendChild(this.audioPlayer);
+
+        // 绑定关闭按钮
+        const closeBtn = this.audioPlayer.querySelector('.close-btn');
+        closeBtn.addEventListener('click', () => this.hideAudioPlayer());
+
+        // 获取 audio 元素引用
+        this.currentAudio = this.audioPlayer.querySelector('audio');
+        this.currentAudio.addEventListener('ended', () => {
+            this.updatePlayerStatus('播放完成');
+        });
+        this.currentAudio.addEventListener('error', () => {
+            this.updatePlayerStatus('播放失败');
+        });
+    }
+
+    bindEvents() {
+        // 监听鼠标抬起事件
+        document.addEventListener('mouseup', (e) => this.handleMouseUp(e));
+
+        // 监听鼠标按下事件（隐藏按钮）
+        document.addEventListener('mousedown', (e) => this.handleMouseDown(e));
+
+        // 监听悬浮按钮点击
+        this.floatBtn.addEventListener('click', (e) => this.handleFloatBtnClick(e));
+
+        // 监听键盘选择
+        document.addEventListener('keyup', (e) => {
+            if (e.shiftKey) {
+                this.handleSelectionChange();
+            }
+        });
+
+        // 监听滚动（隐藏按钮）
+        document.addEventListener('scroll', () => this.hideFloatBtn(), true);
+    }
+
+    handleMouseUp(e) {
+        // 延迟检查选择，确保选择已完成
+        setTimeout(() => this.handleSelectionChange(e), 10);
+    }
+
+    handleMouseDown(e) {
+        // 如果点击的不是悬浮按钮或播放器，则隐藏按钮
+        if (!this.floatBtn.contains(e.target) && !this.audioPlayer.contains(e.target)) {
+            this.hideFloatBtn();
+        }
+    }
+
+    handleSelectionChange(e) {
+        const selection = window.getSelection();
+        const text = selection.toString().trim();
+
+        if (text.length > 0 && text.length <= 1000) {
+            this.selectedText = text;
+            this.showFloatBtn(selection);
+        } else {
+            // 如果没有选中文本或文本过长，隐藏按钮
+            if (!this.isLoading) {
+                this.hideFloatBtn();
+            }
+        }
+    }
+
+    showFloatBtn(selection) {
+        if (this.isLoading) return;
+
+        // 获取选择区域的位置
+        const range = selection.getRangeAt(0);
+        const rect = range.getBoundingClientRect();
+
+        // 计算按钮位置（选择区域的右上方）
+        let left = rect.right + 10;
+        let top = rect.top - 10;
+
+        // 确保按钮在视口内
+        const btnSize = 48;
+        if (left + btnSize > window.innerWidth) {
+            left = rect.left - btnSize - 10;
+        }
+        if (top < 10) {
+            top = rect.bottom + 10;
+        }
+
+        this.floatBtn.style.left = `${left}px`;
+        this.floatBtn.style.top = `${top}px`;
+        this.floatBtn.classList.add('visible');
+    }
+
+    hideFloatBtn() {
+        if (!this.isLoading) {
+            this.floatBtn.classList.remove('visible');
+        }
+    }
+
+    async handleFloatBtnClick(e) {
+        e.preventDefault();
+        e.stopPropagation();
+
+        if (this.isLoading || !this.selectedText) return;
+
+        this.isLoading = true;
+        this.floatBtn.classList.add('loading');
+        this.floatBtn.innerHTML = '<i class="fas fa-spinner"></i>';
+
+        try {
+            await this.speakSelectedText();
+        } catch (error) {
+            console.error('语音合成失败:', error);
+            this.showError(error.message);
+        } finally {
+            this.isLoading = false;
+            this.floatBtn.classList.remove('loading');
+            this.floatBtn.innerHTML = '<i class="fas fa-volume-up"></i>';
+            this.hideFloatBtn();
+        }
+    }
+
+    async speakSelectedText() {
+        // 获取当前选中的音色（如果有的话）
+        const voiceSelect = document.querySelector('input[name="voice"]:checked');
+        const voice = voiceSelect ? voiceSelect.value : 'Cherry';
+
+        // 调用流式 API
+        const response = await fetch('/api/stream', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                text: this.selectedText,
+                voice: voice
+            })
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.detail || `HTTP ${response.status}`);
+        }
+
+        // 读取流式响应并创建 Blob
+        const reader = response.body.getReader();
+        const chunks = [];
+        let receivedLength = 0;
+
+        // 显示播放器并显示加载状态
+        this.showAudioPlayer();
+        this.updatePlayerStatus('加载中...');
+
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            chunks.push(value);
+            receivedLength += value.length;
+
+            // 更新状态显示接收进度
+            const kb = (receivedLength / 1024).toFixed(1);
+            this.updatePlayerStatus(`接收: ${kb} KB`);
+        }
+
+        // 合并所有 chunks
+        const audioBlob = new Blob(chunks, { type: 'audio/wav' });
+        const audioUrl = URL.createObjectURL(audioBlob);
+
+        // 播放音频
+        this.currentAudio.src = audioUrl;
+        this.updatePlayerStatus('播放中...');
+
+        // 清理旧的 blob URL
+        this.currentAudio.onended = () => {
+            URL.revokeObjectURL(audioUrl);
+            this.updatePlayerStatus('播放完成');
+        };
+
+        await this.currentAudio.play();
+    }
+
+    showAudioPlayer() {
+        // 获取悬浮按钮位置
+        const btnRect = this.floatBtn.getBoundingClientRect();
+
+        // 将播放器放在按钮下方
+        let left = btnRect.left - 100;
+        let top = btnRect.bottom + 10;
+
+        // 确保播放器在视口内
+        const playerWidth = 320;
+        if (left + playerWidth > window.innerWidth) {
+            left = window.innerWidth - playerWidth - 20;
+        }
+        if (left < 20) {
+            left = 20;
+        }
+        if (top + 80 > window.innerHeight) {
+            top = btnRect.top - 80;
+        }
+
+        this.audioPlayer.style.left = `${left}px`;
+        this.audioPlayer.style.top = `${top}px`;
+        this.audioPlayer.classList.add('visible');
+    }
+
+    hideAudioPlayer() {
+        this.audioPlayer.classList.remove('visible');
+        if (this.currentAudio) {
+            this.currentAudio.pause();
+            this.currentAudio.src = '';
+        }
+    }
+
+    updatePlayerStatus(status) {
+        const statusEl = this.audioPlayer.querySelector('.player-status');
+        if (statusEl) {
+            statusEl.textContent = status;
+        }
+    }
+
+    showError(message) {
+        // 使用主应用的通知功能
+        if (window.app && window.app.showNotification) {
+            window.app.showNotification(`朗读失败: ${message}`, 'error');
+        } else {
+            alert(`朗读失败: ${message}`);
+        }
+    }
+}
+
 // 初始化应用
 let app;
+let selectionSpeaker;
 document.addEventListener('DOMContentLoaded', () => {
     app = new QwenTTSApp();
+    selectionSpeaker = new SelectionSpeaker();
 });
