@@ -188,7 +188,7 @@ class QwenTTSService:
         if voice not in config.VOICES:
             raise ValueError(f"不支持的音色: {voice}")
 
-        print(f"[流式TTS] 开始合成: text={text[:50]}..., voice={voice}, model={model}")
+        # print(f"[流式TTS] 开始合成: text={text[:50]}..., voice={voice}, model={model}")
 
         # 调用 Qwen-TTS 流式 API（使用官方文档格式：直接参数）
         try:
@@ -200,7 +200,7 @@ class QwenTTSService:
                 stream=True,
             )
         except Exception as e:
-            print(f"[流式TTS] API调用失败: {e}")
+            # print(f"[流式TTS] API调用失败: {e}")
             raise
 
         chunk_count = 0
@@ -227,16 +227,16 @@ class QwenTTSService:
                     audio_bytes = base64.b64decode(audio_data)
                     chunk_count += 1
                     total_bytes += len(audio_bytes)
-                    if chunk_count % 10 == 0:
-                        print(f"[流式TTS] 已接收 {chunk_count} 个chunk, 共 {total_bytes} 字节")
+                    # if chunk_count % 10 == 0:
+                        # print(f"[流式TTS] 已接收 {chunk_count} 个chunk, 共 {total_bytes} 字节")
                     yield audio_bytes
 
                 # 检查是否结束
                 if hasattr(chunk.output, 'finish_reason') and chunk.output.finish_reason == "stop":
-                    print(f"[流式TTS] 合成完成: {chunk_count} 个chunk, 共 {total_bytes} 字节")
+                    # print(f"[流式TTS] 合成完成: {chunk_count} 个chunk, 共 {total_bytes} 字节")
                     break
 
-        print(f"[流式TTS] 流结束: 共 {chunk_count} 个chunk, {total_bytes} 字节")
+        # print(f"[流式TTS] 流结束: 共 {chunk_count} 个chunk, {total_bytes} 字节")
 
 # 批量处理管理器
 class BatchTaskManager:
@@ -497,7 +497,7 @@ async def stream_synthesize_text(request: TTSRequest):
 
         # 如果没有收到任何数据，回退到非流式API
         if chunk_count == 0:
-            print("[流式TTS] 没有收到流式数据，回退到非流式API")
+            # print("[流式TTS] 没有收到流式数据，回退到非流式API")
             result = await tts_service.synthesize_speech(
                 text=request.text,
                 voice=request.voice,

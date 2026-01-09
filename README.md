@@ -53,7 +53,7 @@
 
 ```bash
 # 克隆项目到本地
-git clone https://github.com/nicekate/qwen-tts.git
+git clone https://github.com/johnsmith2078/qwen-tts.git
 
 # 进入项目目录
 cd qwen-tts
